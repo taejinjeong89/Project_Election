@@ -1,0 +1,102 @@
+---
+title: "Map"
+author: "Jun Tan 26370084"
+date: "12/6/2016"
+output: html_document
+---
+
+##Which Party Improved Its Performance in Each County?
+This map shows improvement in performance of either party in one county. For example, Democrats in Orange County, CA lost the election in 2012 by 86449 votes. However, in 2016 won the election in Orange County by 42714 votes. Therefore, they increased the vote gap in this county by 129163, and it means that they did much better in Orange County. Therefore, the circle, which represents Orange County, is blue and has larger area than any county in California. 
+Color of circles shows improve for either party not winning or losing. For example, Republicans lost both election in Wayne county Michigan, but they did much better in 2016, so the circle for Wayne is red. This is important because closing these kinds of votes gaps in for instance Michigan, help Republicans to win the state.
+
+```{r}
+setwd("~/Google Drive/workingdirectory")
+
+
+library(ggplot2)
+library(maps)
+library(ggmap)
+
+map_frame <- merge(election_2012_2016, county_locations, by = c("county_name", "state_abbr"))
+
+#Reading data
+map_frame <- read.csv("final_dataframe.csv")
+
+#Vote Difference in 2012
+map_frame$diff_2012 <- map_frame$Obama_2012 - map_frame$Romney_2012
+
+#Vote difference in 2016
+map_frame$diff_2016 <- map_frame$Clinton_2016 - map_frame$Trump_2016
+
+#new column to figure out amount of shift, if positive in favor of Democrats, if negative in favor of Republicans
+map_frame$diff_in_diff <- map_frame$diff_2016 - map_frame$diff_2012
+map_frame$Party <- ifelse(map_frame$diff_in_diff > 0, "Democrat", "Republican")
+
+#Absolut value of shift to show amount of change in map
+map_frame$Shift <- abs(map_frame$diff_in_diff)
+
+#Adjusting county locations
+map_frame$longitude <- ifelse(map_frame$longitude > -25,map_frame$longitude*10, map_frame$longitude )
+
+#load us map data
+all_states <- map_data("state")
+#plot all states with ggplot
+
+US_map <- geom_polygon( data=all_states, aes(x=long, y=lat, group = group),colour="white", fill="grey80" )
+
+
+ggplot() + US_map +
+geom_point( data=map_frame, aes(x=longitude, y=latitude, color = Party, size = Shift), alpha = .5) +
+  
+  scale_color_manual(values = c("Democrat"="blue", "Republican"="red")) + 
+  scale_size_continuous(range = c(0,7))
+
+```
+
+You can also embed plots, for example:
+
+```{r, echo=FALSE}
+#Result of Election 2016
+map_frame_2016 = election.2016
+map_frame_2016$diff_in_2016 = as.numeric(election.2016$votes_dem) - as.numeric(election.2016$votes_gop)
+
+map_frame_2016$clinton.win = map_frame_2016$diff_in_2016
+map_frame_2016$clinton.win[map_frame_2016$clinton.win < 0] = 0
+map_frame_2016$clinton.win = abs(map_frame_2016$clinton.win)
+
+map_frame_2016$trump.win = map_frame_2016$diff_in_2016
+map_frame_2016$trump.win[map_frame_2016$trump.win > 0] = 0
+map_frame_2016$trump.win = abs(map_frame_2016$trump.win)
+
+data("county.regions")
+map_frame = map_frame[!duplicated(map_frame$combined_fips),] #remove duplicated counties
+
+county_Clinton <- data.frame(region = as.numeric(map_frame_2016$combined_fips), value = as.numeric(map_frame_2016$votes_dem))
+election_Clinton_2016 <- county_choropleth(county_Clinton,
+                                          title = "Election 2016 for Clinton",
+                                          num_colors = 7) +
+  scale_fill_brewer("Votes",palette = "Blues")
+
+county_Clinton_win <- data.frame(region = as.numeric(map_frame_2016$combined_fips), value = as.numeric(map_frame_2016$clinton.win))
+election_Clinton_2016_win <- county_choropleth(county_Clinton_win,
+                                          title = "Counties Where Clinton Won in Election 2016",
+                                          num_colors = 9) +
+  scale_fill_brewer("Margin",palette = "Blues")
+
+county_Trump <- data.frame(region = as.numeric(map_frame_2016$combined_fips), value = as.numeric(map_frame_2016$votes_gop))
+election_Trump_2016 <- county_choropleth(county_Trump,
+                                          title = "Election 2016 for Trump",
+                                          num_colors = 7) +
+  scale_fill_brewer("Votes",palette = "Reds")
+
+county_Trump_win <- data.frame(region = as.numeric(map_frame_2016$combined_fips), value = as.numeric(map_frame_2016$trump.win))
+election_Trump_2016_win <- county_choropleth(county_Trump_win,
+                                          title = "Counties Where Trump Won in Election 2016",
+                                          num_colors = 7) +
+  scale_fill_brewer("Margin",palette = "Reds")
+
+election_Clinton_2016
+election_Clinton_2016_win
+election_Trump_2016
+election_Trump_2016_win
+```

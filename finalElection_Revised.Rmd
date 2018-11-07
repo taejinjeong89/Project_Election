@@ -1,0 +1,1267 @@
+---
+title: "Election Project"
+output: html_document
+author: Jessica Chen, Joon Seokjoon Lee, Roozbeh Faghihi Moghdam, Sue Ying Tay, Taejin Jeong
+---
+####2016 Presidential Election Debrief Project
+
+###STEP 1. DATA WRANGLING
+
+
+##1. 2016 Presidential Election results reported at the country level.
+reference: 
+1)http://www.stat.berkeley.edu/users/nolan/data/voteProject/2016_US_County_Le
+vel_Presidential_Results.csv
+2)https://github.com/tonmcg/County_Level_Election_Results_1216/blob/master/2016_US_County_Level_Presidential_Results.csv
+package: XML, rgdal 
+```{r, include=FALSE}
+#Set working directory
+setwd("~/Google Drive/workingdirectory")
+
+library(XML)
+library(rgdal)
+library(readxl)
+
+
+election.2016 = read.csv(file = "http://www.stat.berkeley.edu/users/nolan/data/voteProject/2016_US_County_Level_Presidential_Results.csv", header = TRUE) # read 2016 presidential election file
+```
+
+
+#REBUILDING ELECTION 2016
+  In Election 2016, the data of Alaska is inconsistent and 'X' column is needless, so we dismiss them. 
+  Since in Election 2004 and 2008 do not have any information about other parties except Democratic and Republican, we decide to change total_votes, which is total of all parties with other parites, to total of only two parties, Democratic and Republican. Then, we also need to change percentage, differentiation, and differentiation of percentage of votes for Democratic and Republican.
+  Also, there are some counties which have 'Parish' and 'city' instead of 'County' in their names, so we change them to 'County'. And, change factors of the dataframe to character strings to match with other files.
+```{r, include=FALSE}
+election.2016 = election.2016[election.2016$state_abbr != "AK",] #The data of Alaska is inconsistent, so I dismiss it.
+
+election.2016 = election.2016[, names(election.2016) != 'X'] # 'X' column is needless, so I dismiss it
+
+election.2016$total_votes = election.2016$votes_dem+election.2016$votes_gop #In election 2004 and 2008 do not have any information about other parties, we decide to change total_votes, which is total of all parties with other parties, to total of only Democratic and Republican
+
+election.2016$per_dem = election.2016$votes_dem/election.2016$total_votes #percentage of Democratic
+
+election.2016$per_gop = election.2016$votes_gop/election.2016$total_votes #percentage of Republican
+
+election.2016$diff = abs(election.2016$votes_dem - election.2016$votes_gop) #differentiation of Democratic and Republican
+
+election.2016$per_point_diff = abs(election.2016$per_dem -
+                                     election.2016$per_gop) 
+#differentiation of percentage of Democratic and Republican
+
+election.2016 <- as.data.frame(sapply(election.2016,gsub,pattern="Parish",replacement="County")) #there are some counties which have Parish instead of County in their names, so change them to County
+
+election.2016 <- as.data.frame(sapply(election.2016,gsub,pattern="city",replacement="County")) #there are some counties which have city instead of County in their names, so change them to County
+
+election.2016 = data.frame(lapply(election.2016, as.character), stringsAsFactors=FALSE) #change factors to character strings
+
+```
+
+
+
+##2. 2012 Presidential Election results reported at the country level.
+reference: 
+1)http://www.politico.com/2012-election/map/#/President/2012/ 2)http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2012/xxx.xml
+3)http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2012/stateNames.txt 
+4)http://stackoverflow.com/questions/10644998/xml-to-r-data-extraction
+package: XML, rgdal, data.table
+
+#READING ELECTION 2012 FILE AND REBUILDING STATES NAME FILE 
+  I read states name file. Then, I removed white space of the states names to match with Election 2016. Also, I removed Alaska since it is inconsistent data. And, I made a list of URLs to store all URLs of states in xmlparse, then parsed XML file of states using sapply.
+```{r, include=FALSE}
+states = read.table("http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2012/stateNames.txt", sep = "\t") #read states name file
+
+states = sub(" +", "", states$V1) #remove white space
+
+states = states[states != "states" & states != "alaska"] #remove Alaska since it is inconsistent data
+
+states_info = paste("http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2012/",states,".xml", sep = "") #make list of URLs to store all URLs of states in xmlparse
+
+states_doc = sapply(states_info, xmlParse) #parse XML file of states
+```
+
+
+#BUILDING ELECTION 2012
+
+#GETTING NUMBER OF VOTES FOR EACH PARTY
+  First, I made two list of number of votes, one for Democratic and other for Republican for each state, from the XML file. Then, I removed ',' from two lists to make them numeric and unlist to merge them to dataframe of Election 2012.
+  Then, I made small dataframe for those number of votes for Democratic and Republican. From it, I got total votes of Democratic and Republican parties, and made dataframe those three things.
+```{r, include=FALSE}
+votes_dem1 = list()
+for(i in 1:50){
+  votes_dem1[[i]] = xpathSApply(xmlRoot(states_doc[[i]]), '//tr[@class= "party-democrat race-winner" or @class = "party-democrat"]/td[@class = "results-popular"]', xmlValue)
+} #make a list of number of votes for Democratic for each state
+votes_dem = as.numeric(gsub(",","",unlist(votes_dem1))) #remove ',' to make it numeric and make it unlist to merge it to dataframe of 2012 election.
+
+votes_gop1 = list()
+for(i in 1:50){
+  votes_gop1[[i]] = xpathSApply(xmlRoot(states_doc[[i]]), '//tr[@class= "party-republican race-winner" or @class = "party-republican"]/td[@class = "results-popular"]', xmlValue)
+} #make a list of number of votes for Republican for each state
+votes_gop = as.numeric(gsub(",","",unlist(votes_gop1))) #remove ',' to make it numeric and make it unlist to merge it to dataframe of 2012 election.
+
+votes_data = data.frame(votes_dem, votes_gop, 
+                  stringsAsFactors = FALSE)       #make small dataframe for votes_dem and votes_gop.
+
+total_votes = votes_data$votes_dem+votes_data$votes_gop #get total votes of Democratic and Republican parties
+
+votes_data = data.frame(votes_data,total_votes, stringsAsFactors = FALSE) #merge votes_dem, votes_gop, and total_votes
+```
+
+#PERCENTAGE OF DEMOCRATIC AND REPUBLICAN // DIFFERENTIATION 
+  I got percentage of votes, differentiation of votes, and differentiation of percentage of votes for Democratic and Republican.
+```{r, include=FALSE}
+per_dem = votes_data$votes_dem/votes_data$total_votes #percentage of Democratic
+per_gop = votes_data$votes_gop/votes_data$total_votes #percentage of Republican
+diff = abs(votes_data$votes_dem - votes_data$votes_gop) #differentiation of Democratic and Republican
+per_point_diff = abs(per_dem - per_gop) #differentiation of percentage of Democratic and Republican
+```
+
+#ABBREVIATION OF STATES FOR ELECTION 2012
+  I made abbreviation of states form Election 2016 to apply them to Election 2012, then made it unlist to merge to the dataframe of Election 2012.
+```{r, include=FALSE}
+abbreviation_state = c("AL", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI","ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN","MS", "MO",  "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH","OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA","WV", "WI", "WY") #make abbreviation of states from election 2016 to apply them to election 2012
+state_abbr1 = list()
+for(i in 1:50){
+  state_abbr1[[i]] = rep(abbreviation_state[i],length(votes_dem1[[i]]))
+}
+state_abbr = unlist(state_abbr1) #make it unlist to merge to dataframe
+
+```
+
+#COUNTY NAME
+  I got names of counties from the XML file, and removed first row whose name is just 'County', an needless strings. Also, I inserted 'county' to end of all strings to make county_name same as Election 2016.
+```{r, include=FALSE}
+county_name1 = list()
+for(i in 1:50){
+  county_name1[[i]] = xpathSApply(xmlRoot(states_doc[[i]]), '//th[@class = "results-county"]', xmlValue)
+  county_name1[[i]] = county_name1[[i]][-1] #remove first row whose name is "County"
+}
+
+county_name = as.character(gsub(" \\d+\\.\\d% Reporting","",unlist(county_name1))) #remove needless strings and make them unlist and character to merge into dataframe.
+county_name[county_name != "District of Columbia"] = paste0(county_name[county_name != "District of Columbia"],' County') #insert ' County' to end of all strings to make county_name same as the election 2016
+```
+
+#COUNTY ID
+  I got ID of counties from the XML file, and made a list of the attributes of ID to make combined_fips column. Then, I removed needless word from the ID and made it unlist and numeric to merge into the dataframe of Election 2012. 
+```{r, include=FALSE}
+combined_fips1 = list()
+for(i in 1:50){
+  combined_fips1[[i]] = xpathSApply(xmlRoot(states_doc[[i]]), '//tbody', xmlGetAttr, "id")
+}  #make a list of attributes of id's of tbody to get combined_fips
+
+combined_fips = as.numeric(gsub("county","",unlist(combined_fips1))) #remove needless word and make them unlist and numeric to merge into dataframe.
+```
+
+#MERGING
+  I merged all data for Election 2012 together and changed factors to character strings to match with other files. Then, I dropped all unused columns. Then, I merged Election 2012 and Election 2016 by combined_ips which is ID of counties since ID of counties are unique. So, we can keep all data of Election of 2012 and 2016 except Bedford City County which is not in Election 2016. We decided to ignore it since there is no data of Bedford City County in Election 2016. At the end, I renamed some column names with candidates' names and election years to distinguish easily with other years.
+```{r, include=FALSE}
+library(data.table)
+
+election.2012 = cbind(votes_data, per_dem, per_gop, diff, per_point_diff, state_abbr, county_name, combined_fips) #merge all data of 2012 election
+election.2012 = data.frame(lapply(election.2012, as.character), stringsAsFactors=FALSE) #change factors to character strings
+election.2012 <- as.data.frame(sapply(election.2012,gsub,pattern="Saint",replacement="St.")) #there are some county which have Saint instead of St. in their names, so change them to St.
+election.2012 <- as.data.frame(sapply(election.2012,gsub,pattern="County County",replacement="County")) #there are some county which have "County County" instead of "County" in their names, so change them to "County"
+
+drops = c("state_abbr","county_name")
+election.2012 = election.2012[, !(names(election.2012) %in% drops)]
+
+election_2012_2016 = merge(election.2016, election.2012, by = c("combined_fips")) #merge election 2016 and 2012
+
+setnames(election_2012_2016, old = c("votes_dem.x", "votes_gop.x", "total_votes.x", "per_dem.x", "per_gop.x", "diff.x", "per_point_diff.x", "votes_dem.y", "votes_gop.y", "total_votes.y", "per_dem.y", "per_gop.y", "diff.y", "per_point_diff.y"), 
+         new = c("Clinton_2016", "Trump_2016", "Total_2016", "DemProp_2016", "RepProp_2016", "DiffVotes_2016", "DiffPer_2016", "Obama_2012", "Romney_2012", "Total_2012", "DemProp_2012", "RepProp_2012", "DiffVotes_2012", "DiffPer_2012"))
+```
+
+
+##3. 2008 Presidential Election results reported at the country level.
+Author: Roozbeh Faghihi Moghdam / 25765752
+reference:
+1)http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2008.xlsx
+2)http://stackoverflow.com/questions/5411979/state-name-to-abbreviation-in-r
+3)http://stackoverflow.com/questions/5487164/r-how-to-replace-parts-of-variable-strings-within-data-frame
+package: read
+
+link for working directory: "https://drive.google.com/drive/folders/0B4YhhdRvxI4_TFd3ci1HcXRvRmc?usp=sharing"
+
+First we need a package to read "xlsx" format, we downloaded "readxl" package for this purpose. We downloaded the file to working directory which is a public folder in google drive. After creating "result_2008" we need to clean the raw data. First, we dropped first sheet, which includes general data about election. Moreover, some of sheets had NULL column, which should be dropped. We also, dropped "Alaska" sheet, and changed column names to have same format as 2016 file. At the end we defined a column of total Obama and McCain votes, and created two new columns that are proportion of Democrat and Republican candidates: "DemProp" and "RepProp".
+```{r, include=FALSE}
+library(readxl)
+
+#Download excel file from {http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2008.xlsx} in your working directory
+
+download.file("http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2008.xlsx", destfile = "~/Google Drive/workingdirectory/countyVotes2008.xlsx")
+
+#Reading Data
+result_2008 <- sapply(excel_sheets("countyVotes2008.xlsx"), read_excel, path = "~/Google Drive/workingdirectory/countyVotes2008.xlsx")
+```
+
+##Cleaning Data
+```{r, include=FALSE}
+#Drop first sheet
+result_2008 <- result_2008[-1]
+
+#Eliminate nulls
+result_2008 <- result_2008[!sapply(result_2008, is.null)]
+
+#Drop column of NAs
+result_2008 <- lapply(result_2008, '[', -7)
+
+#Change state name to short symbols
+states_name <- state.abb[match(names(result_2008),state.name)]
+result_2008 <- mapply(`[<-`, result_2008, 'State', value = states_name, SIMPLIFY = FALSE)
+
+#Combine all excel sheets to one dataframe
+result_2008 <- as.data.frame(do.call(rbind, result_2008))
+
+#Change column names
+colnames(result_2008) <- c("county_name", "Total Precincts", "Precincts Reporting", "Obama_2008", "McCain_2008", "Other", "state_abbr")
+
+#Add "County" at the end of county names
+result_2008$county_name <- paste0(result_2008$county_name, "County")
+
+#Drop Alaska
+result_2008 <- result_2008[!result_2008$state_abbr == "AK", ]
+```
+
+##Add more columns for data analysis
+```{r, include=FALSE}
+#Sum of Democrats and Republicans votes
+
+result_2008$Total_2008 <- result_2008$Obama_2008 + result_2008$McCain_2008
+
+#Democrat and Republican Proportion 
+result_2008$DemProp_2008 <- result_2008$Obama/(result_2008$Obama + result_2008$McCain)
+result_2008$RepProp_2008 <- 1 - result_2008$DemProp
+result_2008$Diff_vote_2008 <- abs(result_2008$Obama - result_2008$McCain_2008)
+result_2008$Diff_percent_2008 <- abs(result_2008$DemProp_2008 - result_2008$RepProp_2008)
+```
+
+#Drop unwanted columns
+```{r, include=FALSE}
+result_2008$`Total Precincts` <-NULL
+result_2008$`Precincts Reporting` <-NULL
+result_2008$Other <-NULL
+```
+
+##Export CSV file
+```{r, include=FALSE}
+#Export CSV file to working directory
+write.csv(file = "~/Google Drive/workingdirectory/result2008.csv", x= result_2008)
+
+```
+At the end by using "write.csv" function, final dataframe for 2008 is saved at working directory. Notice that to run this chunk working directory must be defined.
+
+
+##4. 2004 Presidential Election results reported at the country level.
+Author: Taejin Jeong
+reference: 
+1)http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2004.txt
+package: XML, rgdal
+
+#Reading txt file
+load txt files using read.table function and name it a.
+```{r, include=FALSE}
+
+library(XML)
+library(rgdal)
+
+a = read.table("http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2004.txt")
+```
+
+
+#Modifying datas by column
+Split the data(V1, V2, V3) seperately to work it by column and exclude the first row for it is name of columns.
+First, split states and counties to make informations to be easy to merge. And unlist the data to work with character vectors. After that, switch the state name by state abbreviations and add "County" at the end of the county name and make upper case for the first letter of county name.
+```{r, include=FALSE}
+
+a = a[-1,]
+
+b = sapply(a[[1]], function(x){
+  strsplit(as.character(x), split = ",")
+})
+
+state_abbr = unlist(lapply(b, '[[' , 1))
+
+state_abbr = state.abb[match(state_abbr,tolower(state.name))]
+
+county_name = unlist(lapply(b, '[[' , 2))
+
+county_name = paste0(county_name, " County")
+
+d = function(x) {
+  e = strsplit(x, " ")[[1]]
+  paste(toupper(substring(e, 1,1)), substring(e, 2), sep="", collapse=" ")
+}
+
+county_name = sapply(county_name, function(x){
+  d(x)
+})
+
+```
+
+
+#Make more information by using datas for votes
+To get information for votes using by Bush_2004 and Kerry_2004, convert the factor vector for votes into numeric vector. By subtracting, adding and dviding those values, get values for votes.
+```{r, include=FALSE}
+Bush_2004 = as.numeric(levels(unlist(a[2]))[unlist(a[2])])
+
+Kerry_2004 = as.numeric(levels(unlist(a[3]))[unlist(a[3])])
+
+Diff_votes_2004 = abs(Bush_2004 - Kerry_2004)
+
+Total_2004 = (Bush_2004 + Kerry_2004)
+
+DemProp_2004 = (Kerry_2004 / Total_2004)
+
+RepProp_2004 = (Bush_2004 / Total_2004)
+
+Diff_percent_2004 = abs(RepProp_2004 - DemProp_2004)
+
+```
+
+#Combine all the datas into one
+By using data.frame, combine the columns into one as a data frame
+```{r, include=FALSE}
+
+v2004 = data.frame(Bush_2004, Kerry_2004, Total_2004, DemProp_2004, RepProp_2004, Diff_votes_2004, Diff_percent_2004, state_abbr, county_name)
+
+```
+
+##5. Census data from the 2010 census
+5. Census data from the 2010 census
+Author: Sue Ying Tay
+reference:
+http://www.stat.berkeley.edu/~nolan/data/voteProject/census2010/B01003.csv
+http://www.stat.berkeley.edu/~nolan/data/voteProject/census2010/DP02.csv
+http://www.stat.berkeley.edu/~nolan/data/voteProject/census2010/DP03.csv
+
+package: data.table
+
+#1.5 READING CENSUS DATA
+```{r, include=FALSE}
+race = read.csv("http://www.stat.berkeley.edu/~nolan/data/voteProject/census2010/B01003.csv", na.strings=c(""," ","NA"))
+
+sociod = read.csv("http://www.stat.berkeley.edu/~nolan/data/voteProject/census2010/DP02.csv", na.strings=c(""," ","NA"))
+
+econ = read.csv("http://www.stat.berkeley.edu/~nolan/data/voteProject/census2010/DP03.csv", na.strings=c(""," ","NA"))
+```
+
+#RESHAPING DATA FRAMES TO MATCH EACH OTHER
+For Census data on race, the file downloaded was in long format whilst the other two was in wide format. Thus, we reshaped the file on race to a wide format to match the other files. 
+```{r, include=FALSE}
+race = reshape(race, timevar = "POPGROUP.display.label",
+        idvar = c("GEO.id", "GEO.id2", "GEO.display.label"),
+        direction = "wide")
+```
+
+I also calculated percentage of white and black population as the rest of the data will be in percentage form. 
+```{r, include=FALSE}
+race$popWhite = ((race$`HD01_VD01.White alone`)/(race$`HD01_VD01.Total population`)) *100
+race$popBlack = ((race$`HD01_VD01.Black or African American alone`)/
+  (race$`HD01_VD01.Total population`)) * 100
+```
+
+#CHOOSING VARIABLES
+I chose variables that would be instrumental in helping us predict election results. We chose more general data instead of data that may be too granular/specific. I also chose to keep variables in percentage form instead of raw numbers to ease comparison.
+```{r, include=FALSE}
+library(data.table)
+keep1 = c("GEO.id", "GEO.id2", "GEO.display.label", "popWhite", "popBlack")
+
+race = (race[ , (names(race) %in% keep1)])
+
+# %Family households, %Family households with children under 18, %Single Father, %Single Mother, %Foreign born, %Naturalized Citizen, %Not US Citizen
+
+keep2 =  c("GEO.id", "GEO.id2", "GEO.display.label", "HC03_VC04","HC03_VC06", "HC03_VC09",
+         "HC03_VC11","HC03_VC134","HC03_VC139", "HC03_VC140")
+
+sociod = (sociod[ , (names(sociod) %in% keep2)])
+
+setnames(sociod, old = c("HC03_VC04","HC03_VC06", "HC03_VC09",
+         "HC03_VC11","HC03_VC134","HC03_VC139", "HC03_VC140"), 
+         new = c('Family','withChildren', 'SingleF', 'SingleM', 'ForeignB', 'Naturalized', 'NotCitizen'))
+
+# %In Labor Force, %Unemployed, %Earning < $10,000, .. $10,000 to $14,999, ... $15,000 to $24,999, ...$25,000 to $34,999, ...$35,000 to $49,999, ...$50,000 to $74,999, ...$75,000 to $99,999, ...$100,000 to $149,999, ...$150,000 to $199,999, ...$200,000 or more, %Below poverty level in past 12 months
+
+keep3 =  c("GEO.id", "GEO.id2", "GEO.display.label", "HC03_VC05","HC03_VC13","HC03_VC75", "HC03_VC76",
+           "HC03_VC77","HC03_VC78", "HC03_VC79", "HC03_VC80", "HC03_VC81", "HC03_VC82", "HC03_VC83", 
+           "HC03_VC84", "HC03_VC156")
+
+econ = econ[ , (names(econ) %in% keep3)]
+
+setnames(econ, old = c("HC03_VC05","HC03_VC13","HC03_VC75", "HC03_VC76",
+           "HC03_VC77","HC03_VC78", "HC03_VC79", "HC03_VC80", "HC03_VC81", "HC03_VC82", "HC03_VC83", 
+           "HC03_VC84", "HC03_VC156"), 
+         new = c('inLF','Unemployed', '<10,000', '10-14,999', '15-24,999', '25-34,999', '35-49,999',
+                 '50-74,999','75-99,999', '100-149,999', '150-199,999', '>200,000', 'Poverty'))
+```
+
+#MERGING ALL CENSUS DATA
+I merged all the dataframes on census data together and dropped all unused columns. I also altered the county names to match those in the 2016 dataframe for ease of merging in the future.
+```{r, include=FALSE}
+#merging
+census <- merge(race, econ, by=c("GEO.id","GEO.id2",  "GEO.display.label"))
+census <- merge(census, sociod, by=c("GEO.id","GEO.id2", "GEO.display.label"))
+
+#dropping columns
+drop = c("GEO.display.label", "GEO.id")
+census = census[ , !(names(census) %in% drop)]
+
+```
+
+
+##6. GML(Geographic Markup Language) data that contains the latitude and longtitude for each county.
+Author: Jessica Chen
+reference:
+1) https://piazza.com/class/is6nbl2br3l6bd?cid=728
+2) http://stackoverflow.com/questions/17567712/parse-a-gml-file-from-a-shp-one-in-c
+3) "http://www.stat.berkeley.edu/~nolan/data/voteProject/counties.gml" (data source)
+package: XML
+
+Used the xmlParse and xmlRoot methods of XML package to parse the xml file into an R structure representing the XML tree. elRoot now points to the root node of the XML tree for the election data of latitude and longitude for each county in the US. 
+```{r, include=FALSE}
+electionXML =   "http://www.stat.berkeley.edu/~nolan/data/voteProject/counties.gml"
+
+elDoc = xmlParse(electionXML)
+  
+elRoot = xmlRoot(elDoc)
+```
+
+## Getting the data frame
+In order to extract counties' respective states, names, latitudes, and longitudes from counties.gml, we first use the xPath of the county name to get back a list of the counties' names. In order to parse the gml format, we must add gml to the namespaces our xpathSapply arguments. Getting a list of the states of each county was little more involved, as we used the strategy of first intializing a list of all the state names (state_names) and then finding the number of counties in each state in creating a vector of state names where each state name would repeat at a number of times equal to the count of the counties in that state. For the latitude and longitude, the extraction was relatively straightforward. We use xpathSapply with the path of the x and y coordinates of the location child of the election XML tree and divide by a factor of 10^-6. Finally, we combine all these vectors (counties, states, latitude, and longitude) to get our county locations data frame. 
+
+```{r, include=FALSE}
+#Extract list of xmlValues for all counties in all states
+counties = xpathSApply(elRoot, path = '//state/county/gml:name', namespaces = "gml", xmlValue)
+#Get a list of state_names ("AL", "AK", "AR", ...) by extracting the values of all state nodes in the XML tree. 
+state_names = xpathSApply(elRoot, path = '//state/gml:name', namespaces = "gml", xmlGetAttr, "abbreviation")
+#Initialize empty states vector to store the states (repeated with the number of counties in each state)
+states = character(0)
+
+#For each of the 51 states, we count the number of children (counties) in the xmlNode and add the name of the ith state that many times (counties_num) to the states vector.
+for (i in 1:51){
+  state_name = state_names[[i]]
+  counties_num = length(xpathSApply(elRoot[[i]], ".//county", xmlChildren))/2
+  state_vec = rep(state_name, counties_num)
+  states = c(states, state_vec)
+}
+
+#Extract the xmlValues of the X value in the coord child of the XML tree and store it as longitude
+longitude = xpathSApply(elRoot, path = '//state/county/gml:location/gml:coord/gml:X', namespaces = "gml", xmlValue)
+#Extract the xmlValues of the Y value in the coord child of the XML tree and store it as latitude
+latitude =  xpathSApply(elRoot, path = '//state/county/gml:location/gml:coord/gml:Y', namespaces = "gml", xmlValue)
+
+#Extract the county name as a string in this form "(county name) County"
+counties = sapply(counties, 
+  function(x) {
+    split = strsplit(x, " ")[[1]]
+    lst = split[split!="" & split!= '\n']
+    name = lst[1]
+    return(paste(name, "County"))
+    }
+  )
+#Divide long and lat by 10^-6 so we get the correct format for the numeric value.
+longitude = as.numeric(sapply(longitude, function(x) substring(x, 8, 16)))*10^-6
+latitude = as.numeric(sapply(latitude, function(x) substring(x, 8, 16)))*10^-6
+
+#Combine our data into county_locations data frame.
+county_locations = data.frame(counties, states, latitude, longitude)
+```
+
+
+##MERGING ALL SOURCES
+First, we merged the dataframe, for Election 2012 and 2016, with Census by combined_ips(counties` ID) since only these three dataframes have the counties' ID which are unique. The other side, we merged the dataframes for Election 2004, 2008, and locations for each county by abbreviation of states and names of counties. Then, We merged all dataframes by abbreviation of states and names of counties.
+```{r, include=FALSE}
+colnames(census)[1] = "combined_fips" #change GEO.ID2, which is county ID, to combined_fips to match with Election 2012 and 2016.
+
+setnames (county_locations, old=c ("counties", "states"), new = c("county_name","state_abbr"))
+
+election_2012_2016_Census = merge(election_2012_2016, census, by = c("combined_fips")) #merge Election 2012, Election 2016, and Census by combined_fips.
+
+election_2004_2008 = merge(v2004, result_2008, by = c("state_abbr", "county_name")) #merge Election 2004, Election 2008 by state_abbr and county_name.
+
+locations_election_2004_2008 = merge(county_locations, election_2004_2008, by= c("state_abbr", "county_name")) #merge Election 2004, Election 2008, and locations for each county by state_abbr and county_name.
+
+Election_Result_County = merge(locations_election_2004_2008, election_2012_2016_Census, by = c("state_abbr", "county_name")) #merge all dataframes for locations for each county, Election 2004, 2008, 2012, 2016 and Census by state_abbr and county_name.
+```
+
+Author: Sue Ying Tay
+references:
+packages: car, ggplot2
+#CHECKS
+#Data extraction
+Changing relevant variables to numeric form
+```{r, include=FALSE}
+VarPlot = c("DemProp_2004","DemProp_2008","DemProp_2012", "DemProp_2016",
+            "RepProp_2004","RepProp_2008","RepProp_2012", "RepProp_2016",
+            "Bush_2004", "Kerry_2004", "McCain_2008", "Obama_2008",
+            "Romney_2012", "Obama_2012", "Clinton_2016", "Trump_2016",
+            "Total_2016", "Total_2012", "Total_2008", "Total_2004")
+
+Election_Result_County[VarPlot] <- lapply(Election_Result_County[VarPlot], as.character)
+Election_Result_County[VarPlot] <- lapply(Election_Result_County[VarPlot], as.numeric)
+```
+
+Checking if vote counts add up
+```{r, include=FALSE}
+#2016
+all.equal(Election_Result_County$DemProp_2016*Election_Result_County$Total_2016, Election_Result_County$Clinton_2016)
+
+all.equal(Election_Result_County$RepProp_2016*Election_Result_County$Total_2016, Election_Result_County$Trump_2016)
+
+#2012
+all.equal(Election_Result_County$DemProp_2012*Election_Result_County$Total_2012, Election_Result_County$Obama_2012)
+
+all.equal(Election_Result_County$RepProp_2012*Election_Result_County$Total_2012, Election_Result_County$Romney_2012)
+
+#2008
+all.equal(Election_Result_County$DemProp_2008*Election_Result_County$Total_2008, Election_Result_County$Obama_2008)
+
+all.equal(Election_Result_County$RepProp_2008*Election_Result_County$Total_2008, Election_Result_County$McCain_2008)
+
+#2004
+all.equal(Election_Result_County$DemProp_2004*Election_Result_County$Total_2004, Election_Result_County$Kerry_2004)
+
+all.equal(Election_Result_County$RepProp_2004*Election_Result_County$Total_2004, Election_Result_County$Bush_2004)
+
+#All vote counts add up in terms of party. 
+```
+
+#CHECKS
+#DISTRIBUTION
+Create a separate dataframe for ease of plot-making.
+```{r, include=FALSE}
+df.plot.Dem = as.data.frame(aggregate(DemProp_2016~state_abbr,Election_Result_County,sum))
+df.plot.Dem$DemProp_2012 = aggregate(DemProp_2012~state_abbr,Election_Result_County,sum)[,2]
+df.plot.Dem$DemProp_2008 = aggregate(DemProp_2008~state_abbr,Election_Result_County,sum)[,2]
+df.plot.Dem$DemProp_2004 = aggregate(DemProp_2004~state_abbr,Election_Result_County,sum)[,2]
+
+df.plot.Rep = as.data.frame(aggregate(RepProp_2016~state_abbr,Election_Result_County,sum))
+df.plot.Rep$RepProp_2012 = aggregate(RepProp_2012~state_abbr,Election_Result_County,sum)[,2]
+df.plot.Rep$RepProp_2008 = aggregate(RepProp_2008~state_abbr,Election_Result_County,sum)[,2]
+df.plot.Rep$RepProp_2004 = aggregate(RepProp_2004~state_abbr,Election_Result_County,sum)[,2]
+
+df.plot = cbind(df.plot.Rep, df.plot.Dem)
+
+```
+
+Distributions
+```{r, include=FALSE}
+library(ggplot2)
+library(car)
+library(gridExtra)
+
+#scatterplot matrix to compare the distribution of votes in every election. They should be relatively similar across elections when looked at by party.
+scatterplotMatrix(df.plot.Dem)
+scatterplotMatrix(df.plot.Rep)
+#no large deviations, distributions are fairly similar across years
+
+plot.2016 = 
+  ggplot(data = Election_Result_County) + 
+  geom_boxplot(mapping = aes(x = state_abbr, y = RepProp_2016), colour = "red") +
+  geom_boxplot(mapping = aes(x = state_abbr, y = DemProp_2016), colour = "blue") +
+  scale_x_discrete("State") +
+  scale_y_continuous("Proportion of Votes for Democratic or Republican Party in 2016")
+
+plot.2012 = 
+  ggplot(data = Election_Result_County) + 
+  geom_boxplot(mapping = aes(x = state_abbr, y = RepProp_2012), colour = "red") +
+  geom_boxplot(mapping = aes(x = state_abbr, y = DemProp_2012), colour = "blue") +
+  scale_x_discrete("State") +
+  scale_y_continuous("Proportion of Votes for Democratic or Republican Party in 2012")
+
+plot.2008 = 
+  ggplot(data = Election_Result_County) + 
+  geom_boxplot(mapping = aes(x = state_abbr, y = RepProp_2008), colour = "red") +
+  geom_boxplot(mapping = aes(x = state_abbr, y = DemProp_2008), colour = "blue") +
+  scale_x_discrete("State") +
+  scale_y_continuous("Proportion of Votes for Democratic or Republican Party in 2008")
+
+plot.2004 = 
+  ggplot(data = Election_Result_County) + 
+  geom_boxplot(mapping = aes(x = state_abbr, y = RepProp_2004), colour = "red") +
+  geom_boxplot(mapping = aes(x = state_abbr, y = DemProp_2004), colour = "blue") +
+  scale_x_discrete("State") +
+  scale_y_continuous("Proportion of Votes for Democratic or Republican Party in 2004")
+
+quartz()
+plot.2016
+plot.2012
+plot.2008
+plot.2004
+
+
+```
+
+
+###STEP 2. EXPLORATION
+
+Author: Taejin Jeong
+reference: 
+1) http://stackoverflow.com
+package: ggplot2
+#Change the vector type from factor to numeric or character.
+```{r}
+
+state_abbr = as.character(Election_Result_County$state_abbr)
+county_name = as.character(Election_Result_County$county_name)
+Bush_2004 = as.numeric(Election_Result_County$Bush_2004)
+Kerry_2004 = as.numeric(Election_Result_County$Kerry_2004)
+Total_2004 = as.numeric(Election_Result_County$Total_2004)
+Obama_2008 = as.numeric(Election_Result_County$Obama_2008)
+McCain_2008 = as.numeric(Election_Result_County$McCain_2008)
+Total_2008 = as.numeric(Election_Result_County$Total_2008)
+Clinton_2016 = as.numeric(Election_Result_County$Clinton_2016)
+Trump_2016 = as.numeric(Election_Result_County$Trump_2016)
+Total_2016 = as.numeric(Election_Result_County$Total_2016)
+Obama_2012 = as.numeric(Election_Result_County$Obama_2012)
+Rommney_2012 = as.numeric(Election_Result_County$Romney_2012)
+Total_2012 = as.numeric(Election_Result_County$Total_2012)
+
+```
+
+#Combine vectors to plot the tendency of the states for voting  or rep from 2004 to 2016.
+```{r}
+Vote = data.frame(state_abbr, Kerry_2004, Bush_2004, Total_2004, Obama_2008, McCain_2008, Total_2008, Obama_2012, Rommney_2012, Total_2012, Clinton_2016, Trump_2016, Total_2016)
+```
+
+
+
+#Add all the votes by states to recognize how the tendency of the states varies.
+```{r}
+
+
+Vote = data.frame(t(data.frame(
+Vote_AL = sapply(subset(Vote, state_abbr == "AL")[,-1], sum),
+Vote_AR = sapply(subset(Vote, state_abbr == "AR")[,-1], sum),
+Vote_AZ = sapply(subset(Vote, state_abbr == "AZ")[,-1], sum),
+Vote_CA = sapply(subset(Vote, state_abbr == "CA")[,-1], sum),
+Vote_CO = sapply(subset(Vote, state_abbr == "CO")[,-1], sum),
+Vote_CT = sapply(subset(Vote, state_abbr == "CT")[,-1], sum),
+Vote_DE = sapply(subset(Vote, state_abbr == "DE")[,-1], sum),
+Vote_FL = sapply(subset(Vote, state_abbr == "FL")[,-1], sum),
+Vote_GA = sapply(subset(Vote, state_abbr == "GA")[,-1], sum),
+Vote_IA = sapply(subset(Vote, state_abbr == "IA")[,-1], sum),
+Vote_ID = sapply(subset(Vote, state_abbr == "ID")[,-1], sum),
+Vote_IL = sapply(subset(Vote, state_abbr == "IL")[,-1], sum),
+Vote_IN = sapply(subset(Vote, state_abbr == "IN")[,-1], sum),
+Vote_KS = sapply(subset(Vote, state_abbr == "KS")[,-1], sum),
+Vote_KY = sapply(subset(Vote, state_abbr == "KY")[,-1], sum),
+Vote_LA = sapply(subset(Vote, state_abbr == "LA")[,-1], sum),
+Vote_MA = sapply(subset(Vote, state_abbr == "MA")[,-1], sum),
+Vote_MD = sapply(subset(Vote, state_abbr == "MD")[,-1], sum),
+Vote_ME = sapply(subset(Vote, state_abbr == "ME")[,-1], sum),
+Vote_MI = sapply(subset(Vote, state_abbr == "MI")[,-1], sum),
+Vote_MN = sapply(subset(Vote, state_abbr == "MN")[,-1], sum),
+Vote_MO = sapply(subset(Vote, state_abbr == "MO")[,-1], sum),
+Vote_MS = sapply(subset(Vote, state_abbr == "MS")[,-1], sum),
+Vote_MT = sapply(subset(Vote, state_abbr == "MT")[,-1], sum),
+Vote_NC = sapply(subset(Vote, state_abbr == "NC")[,-1], sum),
+Vote_ND = sapply(subset(Vote, state_abbr == "ND")[,-1], sum),
+Vote_NE = sapply(subset(Vote, state_abbr == "NE")[,-1], sum),
+Vote_NH = sapply(subset(Vote, state_abbr == "NH")[,-1], sum),
+Vote_NJ = sapply(subset(Vote, state_abbr == "NJ")[,-1], sum),
+Vote_NM = sapply(subset(Vote, state_abbr == "NM")[,-1], sum),
+Vote_NV = sapply(subset(Vote, state_abbr == "NV")[,-1], sum),
+Vote_NY = sapply(subset(Vote, state_abbr == "NY")[,-1], sum),
+Vote_OH = sapply(subset(Vote, state_abbr == "OH")[,-1], sum),
+Vote_OK = sapply(subset(Vote, state_abbr == "OK")[,-1], sum),
+Vote_OR = sapply(subset(Vote, state_abbr == "OR")[,-1], sum),
+Vote_PA = sapply(subset(Vote, state_abbr == "PA")[,-1], sum),
+Vote_RI = sapply(subset(Vote, state_abbr == "RI")[,-1], sum),
+Vote_SC = sapply(subset(Vote, state_abbr == "SC")[,-1], sum),
+Vote_SD = sapply(subset(Vote, state_abbr == "SD")[,-1], sum),
+Vote_TN = sapply(subset(Vote, state_abbr == "TN")[,-1], sum),
+Vote_TX = sapply(subset(Vote, state_abbr == "TX")[,-1], sum),
+Vote_UT = sapply(subset(Vote, state_abbr == "UT")[,-1], sum),
+Vote_VT = sapply(subset(Vote, state_abbr == "VT")[,-1], sum),
+Vote_WA = sapply(subset(Vote, state_abbr == "WA")[,-1], sum),
+Vote_WI = sapply(subset(Vote, state_abbr == "WI")[,-1], sum),
+Vote_WV = sapply(subset(Vote, state_abbr == "WV")[,-1], sum),
+Vote_WY = sapply(subset(Vote, state_abbr == "WY")[,-1], sum))))
+
+DemProp_2004 = Vote[[1]]/Vote[[3]]
+RepProp_2004 = Vote[[2]]/Vote[[3]]
+DemProp_2008 = Vote[[4]]/Vote[[6]]
+RepProp_2008 = Vote[[5]]/Vote[[6]]
+DemProp_2012 = Vote[[7]]/Vote[[9]]
+RepProp_2012 = Vote[[8]]/Vote[[9]]
+DemProp_2016 = Vote[[10]]/Vote[[12]]
+RepProp_2016 = Vote[[11]]/Vote[[12]]
+
+Final_Vote = data.frame(Vote, DemProp_2004, RepProp_2004, DemProp_2008, RepProp_2008, DemProp_2012, RepProp_2012, DemProp_2016, RepProp_2016)
+
+Prop_Vote = Final_Vote[-(1:12)]
+
+```
+
+
+
+#Pick some states that are not seemed to support one party.
+```{r}
+
+library(ggplot2)
+
+data1 = as.numeric(Prop_Vote[4,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_CA = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for California",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_CA
+
+data1 = as.numeric(Prop_Vote[5,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_CO = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for Connecticut",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_CO
+
+data1 = as.numeric(Prop_Vote[8,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_FL = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for Florida",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_FL
+
+data1 = as.numeric(Prop_Vote[10,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_IA = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for Iowa",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_IA
+
+data1 = as.numeric(Prop_Vote[13,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_IN = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for Indiana",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_IN
+
+data1 = as.numeric(Prop_Vote[20,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_MI = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for Michigan",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_MI
+
+data1 = as.numeric(Prop_Vote[21,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_MN = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for Minnesota",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_MN
+
+data1 = as.numeric(Prop_Vote[25,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_NC = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for North Carolina",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_NC
+
+data1 = as.numeric(Prop_Vote[28,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_NH = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for New Hampshire",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_NH
+
+data1 = as.numeric(Prop_Vote[30,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_NM = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for New Mexico",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_NM
+
+data1 = as.numeric(Prop_Vote[31,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_NV = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for Nevada",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_NV
+
+data1 = as.numeric(Prop_Vote[33,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_OH = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for Ohio",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_OH
+
+data1 = as.numeric(Prop_Vote[36,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_PA = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for Pennsylvania",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_PA
+
+data1 = as.numeric(Prop_Vote[45,])
+data2 = c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016")[order(c("Kerry_2004", "Bush_2004", "Obama_2008", "McCain_2008", "Obama_2012", "Romney_2012", "Clinton_2016", "Trump_2016"))]
+df = data.frame(data1, data2)
+plot_WA = ggplot(df, aes(x = data2, y=data1, fill= rep(c("blue","red"), 4))) + geom_bar(stat="identity") + geom_hline(yintercept=0.5) + labs(title = "Tendency of the Votes for Washington",x = "Votes for Democrats and Republican for several elections", y = "Proportion of the Votes", fill="party") + scale_fill_manual(labels = c("Democrats","Republican")[order(c("Democrats","Republican"))], values = c("blue","red")[order(c("blue","red"))]) + theme(plot.title = element_text(hjust=0.5))
+plot_WA
+
+```
+
+For those datas(47 States) for election votes from 2004 to 2016, many of the states consistently have supported one party. So based on the data, we can insist that those states giving a consistent support to one party on the elections from 2004 to 2016 will support the same party no matter who come for presidential candidate. So we focus more on those states seemed to be swinged at least once on the election from 2004 to 2016. Those states are called 'Swing States'.
+
+Those plots are the tendency of the State seemed to be swinged.
+
+
+
+###STEP 3. MAP MAKING
+
+
+##1. 
+Author: Roozbeh Faghihi Moghadam
+reference: 
+1) http://stackoverflow.com/questions/20471842/customising-legend-size-symbol-items-in-ggplot2
+2) https://uchicagoconsulting.wordpress.com/tag/r-ggplot2-maps-visualization/
+package: ggplot2, maps, ggmap
+
+
+##Which Party Improved Its Performance in Each County?
+This map shows improvement in performance of either party in one county. For example, Democrats in Orange County, CA lost the election in 2012 by 86449 votes. However, in 2016 won the election in Orange County by 42714 votes. Therefore, they increased the vote gap in this county by 129163, and it means that they did much better in Orange County. Therefore, the circle, which represents Orange County, is blue and has larger area than any county in California. 
+Color of circles shows improve for either party not winning or losing. For example, Republicans lost both election in Wayne county Michigan, but they did much better in 2016, so the circle for Wayne is red. This is important because closing these kinds of votes gaps in for instance Michigan, help Republicans to win the state.
+
+```{r}
+setwd("~/Google Drive/workingdirectory")
+
+
+library(ggplot2)
+library(maps)
+library(ggmap)
+
+map_frame <- merge(election_2012_2016, county_locations, by = c("county_name", "state_abbr"))
+
+#Reading data
+map_frame <- read.csv("final_dataframe.csv")
+
+#Vote Difference in 2012
+map_frame$diff_2012 <- map_frame$Obama_2012 - map_frame$Romney_2012
+
+#Vote difference in 2016
+map_frame$diff_2016 <- map_frame$Clinton_2016 - map_frame$Trump_2016
+
+#new column to figure out amount of shift, if positive in favor of Democrats, if negative in favor of Republicans
+map_frame$diff_in_diff <- map_frame$diff_2016 - map_frame$diff_2012
+map_frame$Party <- ifelse(map_frame$diff_in_diff > 0, "Democrat", "Republican")
+
+#Absolut value of shift to show amount of change in map
+map_frame$Shift <- abs(map_frame$diff_in_diff)
+
+#Adjusting county locations
+map_frame$longitude <- ifelse(map_frame$longitude > -25,map_frame$longitude*10, map_frame$longitude )
+
+#load us map data
+all_states <- map_data("state")
+
+#plot all states with ggplot
+US_map <- geom_polygon( data=all_states, aes(x=long, y=lat, group = group),colour="white", fill="grey80" )
+
+ggplot() + US_map +
+  geom_point( data=map_frame, aes(x=longitude, y=latitude, color = Party, size = Shift), alpha = .5) +
+  scale_color_manual(values = c("Democrat"="blue", "Republican"="red")) + 
+  scale_size_continuous(range = c(0,7)) +
+  ggtitle("Vote Shift, 2012 - 2016") +
+  theme_minimal()
+
+```
+As we can see in so called "Blue Wall", Republicans did much better than 2012, and had improvement almost in every single county. 
+
+##2
+Author: Joon Seokjoon Lee
+reference: 
+1)https://cran.r-project.org/web/packages/choroplethr/vignettes/c-county-choropleth.html 2)http://www.joshuastevens.net/cartography/make-a-bivariate-choropleth-map/
+3)https://uchicagoconsulting.wordpress.com/tag/r-ggplot2-maps-visualization/ 
+package: ggplot2, maps, choroplethr, choroplethrMaps
+
+
+##Result of Election 2016
+First, I built dataframe for mapping election 2016 from dataframe of electioin 2016 we have. Then, I added a column difference between votes for Clinton and Trump to see who won in which counties(if the difference is positive, then Cliton won. Otherwise, Trump won.) Using this logic, I made two columns for Clinton and Trump, and stroed value of the differences. Then, I put 0 to some counties which the candidates defeated. So, in some counties, if Clinton won, then store the differences to Clinton, and gave 0 to Trump, so that we can compare easily at the map. Then, I made two dataframes for Clinton and Trump to use function county_choropleth which use county.map in the choroplethrMaps package. The dataframe with a column named "region" and a column named "value". Elements in the "region" column must exactly match how regions are named in the "region" column in county.map. The "region" is matched with combined_fips of map_frame_2016 dataframe. And, I stored number of differences to "value", so the map would show the differences as palette. So, I made two maps to compare easily who won in which counties by margin(0 means defeat).
+```{r}
+library(ggplot2)
+library(maps)
+library(choroplethr)
+library(choroplethrMaps)
+
+#Result of Election 2016
+
+map_frame_2016 = election.2016 #build data frame for mapping election 2016
+map_frame_2016$diff_in_2016 = as.numeric(election.2016$votes_dem) - as.numeric(election.2016$votes_gop) #add column difference between votes for Clinton and Trump to see who won in which counties(if the difference is positive, then Cliton won. Otherwise, Trump won.)
+
+map_frame_2016$clinton.win = map_frame_2016$diff_in_2016 #add column for Clinton and store the difference.
+map_frame_2016$clinton.win[map_frame_2016$clinton.win < 0] = 0 #subset by logic that for Clinton, if the difference is positive, then keep the number. If it is negative, then store 0.
+
+map_frame_2016$trump.win = map_frame_2016$diff_in_2016 #add column for Clinton and store the difference.
+map_frame_2016$trump.win[map_frame_2016$trump.win > 0] = 0 #subset by logic that for Trump, if the difference is negative, then keep the number. If it is positive, then store 0.
+map_frame_2016$trump.win = abs(map_frame_2016$trump.win) #change the number of difference to absolute, so we can compare margin of votes for Trump and Clinton.
+
+
+ 
+county_Clinton_win <- data.frame(region = as.numeric(map_frame_2016$combined_fips), value = as.numeric(map_frame_2016$clinton.win))
+#make a dataframe for Clinton to use function county_choropleth which use county.map in the choroplethrMaps package. The dataframe with a column named "region" and a column named "value". Elements in the "region" column must exactly match how regions are named in the "region" column in county.map. The "region" is matched with combined_fips of map_frame_2016 dataframe. And, I stored number of differences for Clinton won to "value".
+
+
+
+election_Clinton_2016_win <- county_choropleth(county_Clinton_win,
+                                          title = "Counties Where Clinton Won in 2016 Election",
+                                          num_colors = 9) +
+  scale_fill_brewer("Margin\n(0 means defeat)",palette = "Blues")
+#make a map of the result of the election for Clinton using county_choropleth.
+
+county_Trump_win <- data.frame(region = as.numeric(map_frame_2016$combined_fips), value = as.numeric(map_frame_2016$trump.win))
+#make a dataframe for Trump to use function county_choropleth which use county.map in the choroplethrMaps package. The dataframe with a column named "region" and a column named "value". Elements in the "region" column must exactly match how regions are named in the "region" column in county.map. The "region" is matched with combined_fips of map_frame_2016 dataframe. And, I stored number of differences for Trump won to "value".
+
+election_Trump_2016_win <- county_choropleth(county_Trump_win,
+                                          title = "Counties Where Trump Won in 2016 Election",
+                                          num_colors = 7) +
+  scale_fill_brewer("Margin\n(0 means defeat)",palette = "Reds")
+#make a map of the result of the election for Clinton using county_choropleth.
+
+
+election_Clinton_2016_win    
+election_Trump_2016_win      
+
+```
+
+###STEP 4. MODELING
+#Part A: Explaining/ Predicting 2016 Election Results
+Author: Jessica Chen
+package: rpart
+reference:
+1) http://www.statmethods.net/advstats/cart.html
+2) http://stats.stackexchange.com/questions/64551/how-to-use-rparts-result-in-prediction
+3) http://cran.r-project.org/web/packages/rpart/rpart.pdf
+4) Lab 8 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+load("~/Downloads/Election_Result_County.Rda")
+library(rpart)
+library(ggplot2)
+```
+
+## Classification Tree for 2016 Election Results 
+
+```{r}
+#Create logical vectors for the election results of each year from the Republican/Democratic voting proportions. 
+#TRUE if Republican proprotion exceeds Democratic proportion, FALSE otherwise
+Election_Result_County$RepWin_2004 = 
+  as.logical(Election_Result_County$RepProp_2004 > Election_Result_County$DemProp_2004)
+
+Election_Result_County$RepWin_2008 = 
+  as.logical(Election_Result_County$RepProp_2008 > Election_Result_County$DemProp_2008)
+
+Election_Result_County$RepWin_2012 = 
+  as.logical(Election_Result_County$RepProp_2012 > Election_Result_County$DemProp_2012)
+
+Election_Result_County$RepWin_2016 = 
+  as.logical(Election_Result_County$RepProp_2016 > Election_Result_County$DemProp_2016)
+```
+
+##Cross-Validation
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+load("~/Downloads/Election_Result_County.Rda")
+library(rpart)
+library(ggplot2)
+```
+
+## Classification Tree for 2016 Election Results 
+
+```{r}
+#Create logical vectors for the election results of each year from the Republican/Democratic voting proportions. 
+#TRUE if Republican proprotion exceeds Democratic proportion, FALSE otherwise
+Election_Result_County$RepWin_2004 = 
+  as.logical(Election_Result_County$RepProp_2004 > Election_Result_County$DemProp_2004)
+
+Election_Result_County$RepWin_2008 = 
+  as.logical(Election_Result_County$RepProp_2008 > Election_Result_County$DemProp_2008)
+
+Election_Result_County$RepWin_2012 = 
+  as.logical(Election_Result_County$RepProp_2012 > Election_Result_County$DemProp_2012)
+
+Election_Result_County$RepWin_2016 = 
+  as.logical(Election_Result_County$RepProp_2016 > Election_Result_County$DemProp_2016)
+```
+
+##Cross-Validation
+
+## Classification Tree for 2016 Election Results 
+
+```{r}
+library(ggplot2)
+library(rpart)
+#Create logical vectors for the election results of each year from the Republican/Democratic voting proportions. 
+#TRUE if Republican proprotion exceeds Democratic proportion, FALSE otherwise
+Election_Result_County$RepWin_2004 = 
+  as.logical(Election_Result_County$RepProp_2004 > Election_Result_County$DemProp_2004)
+
+Election_Result_County$RepWin_2008 = 
+  as.logical(Election_Result_County$RepProp_2008 > Election_Result_County$DemProp_2008)
+
+Election_Result_County$RepWin_2012 = 
+  as.logical(Election_Result_County$RepProp_2012 > Election_Result_County$DemProp_2012)
+
+Election_Result_County$RepWin_2016 = 
+  as.logical(Election_Result_County$RepProp_2016 > Election_Result_County$DemProp_2016)
+```
+
+##Cross-Validation
+
+First, we will set aside a training data of 350 observations and create a training set of 2400 observations with the remaining data.
+```{r tree, echo=FALSE}
+#selecting the test set
+set.seed(24687531)
+nTotal = nrow(Election_Result_County)
+chooseTest = sample(nTotal, size = 350, replace = FALSE)
+electionTest = Election_Result_County[chooseTest, ]
+electionTrain = Election_Result_County[ -chooseTest, ]
+```
+
+#Creating the predictor with our training Data
+
+To create the predictor, we perform 10-fold cross-validation on the data for the 2016 Election.
+The 10 column matrix folds will help us split up the data frame into 10 partitions that we will cross-validate to build our predictor later. 
+```{r}
+nTrain = nrow(electionTrain)
+# Set the seed so we all get the same results
+set.seed(12344321)
+permuteIndices = sample(nTrain)
+
+v = 10
+folds = matrix(permuteIndices, ncol = v)
+```
+
+(From Lab 8: Cross-Validation)
+Now that we have our folds, for each fold we:
+  -build the tree based on 9/10 of electionTrain
+  -predict the device using this tree for the remaining 1/10 of the data
+  -We want to build a tree for several values of the complexity parameter cp.
+
+Then, we will have predictions for all observations in electionTrain for several valus of cp.
+
+We use a double loop, over the folds and the complexity parameter values to get our predictions
+
+```{r}
+#all cp values we will test in our training set to select the best cp later. 
+cps = c(seq(0.0001, 0.001, by = 0.0001), 
+       seq(0.001, 0.01, by = 0.001),
+       seq(0.01, 0.1, by = 0.01))
+
+preds = matrix(nrow = nTrain, ncol = length(cps))
+
+#for each partition i, we will make it our testing data for which we will create a predictor with the remaining 9/10 of the data.
+for (i in 1:10) {
+  testFold = folds[, i]
+  trainFold = as.integer(folds[, -i])
+  for (j in 1:length(cps)) {
+    #make a factor of wins for Republicans or Democrats (2 levels)
+    results = factor(electionTrain$RepWin_2016, levels = c(TRUE, FALSE), labels = c("Republican win", "Democrat win"))
+    
+    #all the variables used in the predictor
+    unemployment = electionTrain$Unemployed
+    poverty = electionTrain$Poverty
+    popWhite = electionTrain$popWhite
+    wChildren = electionTrain$withChildren
+    singleM = electionTrain$SingleM
+    inLaborForce = electionTrain$inLF
+    foreignB = electionTrain$ForeignB
+    income0to25K = electionTrain$`<10,000`+ electionTrain$`10-14,999` + electionTrain$`15-24,999`
+    income25to50K = electionTrain$`25-34,999`+ electionTrain$`35-49,999`
+    income50to100K = electionTrain$`50-74,999`+ electionTrain$`75-99,999`
+    income100to150K = electionTrain$`100-149,999` + electionTrain$`150-199,999`
+    income200up = electionTrain$`>200,000`
+    
+    tree = rpart(RepWin_2016 ~ Unemployed + Poverty + popWhite + withChildren + SingleM + inLF + ForeignB + `<10,000` + `10-14,999` + `15-24,999` + `25-34,999` + `35-49,999` + `50-74,999` + `75-99,999` + `100-149,999` + `150-199,999` + `>200,000`,
+            data = electionTrain, 
+            method = "class",
+            control = rpart.control(cp = cps[j]))
+    
+    ndata = electionTrain[testFold, -59]
+    preds[testFold, j] = 
+      predict(tree, 
+              newdata = ndata,
+              type = "class")
+  }
+}
+```
+
+Calculate the proportion of correct predictions for each value of the complexity parameter values.
+```{r}
+cvRates = apply(preds, 2, function(oneSet) {
+  sum(oneSet == as.numeric(electionTrain$RepWin_2016)) / nTrain 
+})
+```
+
+Choose best cp rate with a plot 
+```{r}
+which.max(cvRates)
+cvRes = data.frame(cps, cvRates)
+ggplot(data = cvRes, aes(x = cps, y = cvRates)) +
+  geom_line() +
+  labs(x = "Complexity Parameter", y = "Classification Rate")
+```
+
+Final Assessment of the Classification Tree Predictor
+
+Take the electionTest data and use the predictor to see how accurate our predictor is. 
+```{r}
+
+#lowest cv rate occurs at around 0.0003 based on the graph
+cpChoice = 0.0003
+finalTree = rpart(RepWin_2016 ~ Unemployed + Poverty + popWhite + withChildren + SingleM + inLF + ForeignB + `<10,000` + `10-14,999` + `15-24,999` + `25-34,999` + `35-49,999` + `50-74,999` + `75-99,999` + `100-149,999` + `150-199,999` + `>200,000`,
+                  data = electionTrain, 
+                  method = "class",
+                  control = rpart.control(cp = cpChoice))
+   
+testPreds = predict(finalTree, 
+              newdata = electionTest,
+              type = "class")
+
+classRate = sum(testPreds == electionTest$RepWin_2016) / 
+  nrow(electionTest)
+
+classRate
+
+```
+
+
+#Part B: Explaining/ Predicting Change from 2012 to 2016 Election Results
+Author: Sue Ying Tay
+reference: 
+1) https://www.datacamp.com/community/tutorials/machine-learning-in-r
+package: class, gmodels
+
+Creating a logical vector that measures direction of change to favor the Republican Party more or Democratic Party more, from 2012 to 2016
+```{r}
+Election_Result_County$Change = as.logical((Election_Result_County$RepProp_2016 - Election_Result_County$RepProp_2012) >0)
+
+```
+
+Creating dataframes with different sets of predictors. The groups are: economic factors, geographic factors, family factos and social factors.
+```{r}
+#Economic factors as predictors
+keep_econ = c('inLF','Unemployed', '<10,000', '10-14,999', '15-24,999', '25-34,999', '35-49,999', '50-74,999', '75-99,999', '100-149,999', '150-199,999', '>200,000', 'Poverty', 'Change')
+pred_data_econ = (Election_Result_County[ , (names(Election_Result_County) %in% keep_econ)])
+pred_data_econ = na.omit(pred_data_econ)
+
+#Geography as predictor
+keep_geo = c('latitude' , 'longitude' , 'Change')
+pred_data_geo = (Election_Result_County[ , (names(Election_Result_County) %in% keep_geo)])
+pred_data_geo = na.omit(pred_data_geo)
+
+#Family factors as predictor
+keep_family= c('withChildren', 'SingleF', 'SingleM', 'Change')
+pred_data_family = (Election_Result_County[ , (names(Election_Result_County) %in% keep_family)])
+pred_data_family = na.omit(pred_data_family)
+
+#Race/Immigration factors as predictors
+keep_social = c('popWhite',  'ForeignB' ,'Change')
+pred_data_social = (Election_Result_County[ , (names(Election_Result_County) %in% keep_social)])
+pred_data_social = na.omit(pred_data_social)
+
+```
+
+Creating samples for cross-validation
+```{r}
+#Economic factors as predictors
+set.seed(6399737)
+chooseTest_econ = sample(nrow(pred_data_econ), size = 275, replace = FALSE)
+electionTest_econ = pred_data_econ[chooseTest_econ,]
+electionTrain_econ = pred_data_econ[ -chooseTest_econ, ]
+
+electionTest_labels_econ = pred_data_econ[chooseTest_econ,14 ]
+electionTrain_labels_econ = pred_data_econ[-chooseTest_econ,14 ]
+
+#Geography as predictor
+set.seed(6399737)
+chooseTest_geo = sample(nrow(pred_data_geo), size = 275, replace = FALSE)
+electionTest_geo = pred_data_geo[chooseTest_geo,]
+electionTrain_geo = pred_data_geo[ -chooseTest_geo, ]
+
+electionTest_labels_geo = pred_data_geo[chooseTest_geo,3 ]
+electionTrain_labels_geo = pred_data_geo[-chooseTest_geo,3 ]
+
+#Family factors as predictor
+set.seed(6399737)
+chooseTest_family = sample(nrow(pred_data_family), size = 264, replace = FALSE)
+electionTest_family = pred_data_family[chooseTest_family,]
+electionTrain_family = pred_data_family[ -chooseTest_family, ]
+
+electionTest_labels_family = pred_data_family[chooseTest_family,4 ]
+electionTrain_labels_family = pred_data_family[-chooseTest_family,4 ]
+
+#Race/Immigration factors as predictors#Social/ Family factors as predictor
+set.seed(6399737)
+chooseTest_social = sample(nrow(pred_data_social), size = 264, replace = FALSE)
+electionTest_social = pred_data_social[chooseTest_social,]
+electionTrain_social = pred_data_social[ -chooseTest_social, ]
+
+electionTest_labels_social = pred_data_social[chooseTest_social,3 ]
+electionTrain_labels_social = pred_data_social[-chooseTest_social,3 ]
+```
+
+KN-N. I start out with a k that is the square root of sample size, and then optimize to minimize CV error, and to avoid underfitting. 
+```{r}
+library(class)
+test_pred_econ = knn(train = electionTrain_econ, test = electionTest_econ, cl = electionTrain_labels_econ, k=45)
+
+test_pred_geo = knn(train = electionTrain_geo, test = electionTest_geo, cl =electionTrain_labels_geo, k=44)
+
+test_pred_family = knn(train = electionTrain_family, test = electionTest_family, cl =electionTrain_labels_family, k=51)
+
+test_pred_social = knn(train = electionTrain_social, test = electionTest_social, cl =electionTrain_labels_social, k=42)
+
+```
+
+Testing Predictions and optimizing for k.
+```{r}
+library(gmodels)
+CrossTable(x = electionTest_labels_econ, y = test_pred_econ, prop.chisq = FALSE)
+#92% accuracy. Overestimate that favor toward the Republican Party will increase, by 8.3%.
+
+CrossTable(x = electionTest_labels_geo, y = test_pred_geo, prop.chisq = FALSE)
+#97% accuracy. Overestimate that favor toward the Republican Party will increase, by 3.25%.
+
+CrossTable(x = electionTest_labels_family, y = test_pred_family, prop.chisq = FALSE)
+#87.9% accuracy.Overestimate that favor toward the Republican Party will increase, by 13.3%.
+
+CrossTable(x = electionTest_labels_social, y = test_pred_social, prop.chisq = FALSE)
+#90.2% accuracy. Overestimate that favor toward the Republican Party will increase, by 10.2%.
+```
+
+
+###Step 5. Final Report
+
+#Introduction
+Predicting election results has a long history in United States with its upsides and downsides. However, election 2016 was a turning point; while almost all of credible polls predicted Clinton would be the winner, Trump broke the "Blue Wall" and won the election. 
+In this study, we create a prediction model to examine our modeling, visualizing, and data cleaning abilities. We dealt with different data formats such as "csv", "xlsx", "xml" and "text". 
+In data cleaning section, we set 2016 election data as our reference, and then modified other data in the format of 2016. For this purpose we should change some character entries like state name and county name. 
+
+#Data Description
+In purpose of data analysis, we only focused on votes of Democrats and Republicans and not other candidates. As a result, we created two new columns for each election that represent percentage votes of Democrats and Republicans in absence of votes of other candidates. We also have total votes of each candidate in every county from 2004 to 2006.  For mapping, longitude and latitude of each county is available. However, in final dataframe, we do not have data for all counties. Part of that is due to not including Alaska in final dataframe and another reason is missing data for state of Virginia in 2004 election. For more analysis, variables such as population of minorities, average income, poverty etc. is available at county level.
+
+#Map
+Before making a map for 2016 election result, we wanted to check which party improved its performance in each county. So, first, we chose two colors, red and blue, to classify the parties that red is for republican and blue is for democrat. Also, we decided circles to express the improvement by establishing the areas of circles to the differences of votes for each parties in 2012 and 2016. Then, we made a map which shows improvement in performance of either party in one county. In the map, if we focus on the size of the circles, Democrats showed great improvements in some counties. However, even if the size of the circles of Repulican are small, they had improvement almost in every single county. So, we could conclude that Republicans did much better than 2012. 
+Then, we made a map for the result of election 2016. And, we could find that the trends and patterns of the first map were also represented in 2016 election. In the map, the counties which Clinton won showed a large margin of votes that the most margin of votes was 1,112,035. In the contrary, the counties which Trump won showed a smaller margin of votes than Clinton, that the largest margin of votes was 104,444. However, in contrast with the map for Clinton, we could see that reds evenly distribute among almost every single county in the map for Trump, which means Trump won in almost the whole of the counties. Therefore, through these two maps, we could find that the improvement of Repulicans led to the victory of the 2016 election. 
+
+#Predicting the 2016 Results
+In this part of the question, we're essentially using the census data in 2010 and the results of our 2016 election to predict the results of the election. To do this, we used the recursive partitioning method to create a classification tree based on the values we got from the 2016 Census data for income, % white population, unemployment rate, % in poverty, % in labor force, % with childre, etc in each county. We used the rpart package to create a decision tree that reflected the predictions based on these predictor variables. To assess how accurate our model was, we cross-validated the actual election results in "Election_Result_County" by creating a logical vector of whether or not a county had a Republican win with our vectors of predictions based on the tree we built. We counted the number of matches we got in the two logical vectors and calculated the percentage of matches over all the counties we used in our model (2750 counties) and ended with a 0.911 rate of accuracy for our predictor of 2016 result with just the predictors variables of income, white population, etc, which is significant because it shows just how much these predictors matter in an election. I used only 17 out of 59 variables, but I was able to get a 91.1% accuracy rate for prediction, which is pretty impressive. 
+
+#Predicting Change from 2012 to 2016 Election Results
+Using the same census data as used to predict the 2016 election results, we attempted to explain the change in county level voting patterns from 2012 to 2016, leading to a Republican victory in 2016 from a Democratic victory in 2012. We created four different groups - economic, geographic, family and social factors - to see which would best explain these changes. To see if we could predict/ explain these changes, we used the nearest neighbour method, with the knn function in R's class model. We found that all factors over-estimated wins for Republicans. Geographical factors were the most accurate in predicting changes, followed by economic factors and family factors were the least accurate predictor. Thus, we can infer that county level voting patterns are similar to other counties nearby, and details about one's family - number of children, marital status etc. - are less accurate predictors of voting patterns. 
+
+#Discussion
+To predict the result of the election, we could use several factors as we mentioned above such as economic levels, family and social factros, etc. But what we found above is that those factors(economic, family and social factors, etc) are distributed mostly according to geographic factors which means that families living in a county mostly have similar factors.Thus, if we use the geographic factor, then we can assume that it covers most of the factors for large samples.
+
+To win the election, parties have to have win more states than the others. Thus Whether a party wins at some states dramatically or not does not affect the election so much. The most important things to win the election is that the number of the states they win. By using the map for 'Vote shifting', we can notice that Republican slightly wins most of the counties while Democrats wins dramatically at some counties. Even though Democrats did well in some counties, Democrats did not good in the elections like Democrats wins some battle dramatically but Republican wins the War.
+
+#Reference
+1)RStudio
+2)http://www.stat.berkeley.edu/users/nolan/data/voteProject/2016_US_County_Le
+vel_Presidential_Results.csv
+3)https://github.com/tonmcg/County_Level_Election_Results_1216/blob/master/2016_US_County_Level_Presidential_Results.csv
+4)http://www.politico.com/2012-election/map/#/President/2012/ 5)http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2012/xxx.xml
+6)http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2012/stateNames.txt 
+7)http://stackoverflow.com/questions/10644998/xml-to-r-data-extraction
+8)http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2008.xlsx
+9)http://stackoverflow.com/questions/5411979/state-name-to-abbreviation-in-r
+10)http://stackoverflow.com/questions/5487164/r-how-to-replace-parts-of-variable-strings-within-data-frame
+11)http://www.stat.berkeley.edu/~nolan/data/voteProject/census2010/B01003.csv
+12)http://www.stat.berkeley.edu/~nolan/data/voteProject/census2010/DP02.csv
+13)http://www.stat.berkeley.edu/~nolan/data/voteProject/census2010/DP03.csv
+14)http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2004.txt
+15) https://piazza.com/class/is6nbl2br3l6bd?cid=728
+16) http://stackoverflow.com/questions/17567712/parse-a-gml-file-from-a-shp-one-in-c
+17) "http://www.stat.berkeley.edu/~nolan/data/voteProject/counties.gml" (data source)
+18)https://cran.r-project.org/web/packages/choroplethr/vignettes/c-county-choropleth.html 2)http://www.joshuastevens.net/cartography/make-a-bivariate-choropleth-map/
+19)https://uchicagoconsulting.wordpress.com/tag/r-ggplot2-maps-visualization/
+https://www.datacamp.com/community/tutorials/machine-learning-in-r
+20) http://stackoverflow.com/questions/20471842/customising-legend-size-symbol-items-in-ggplot2
+21) https://uchicagoconsulting.wordpress.com/tag/r-ggplot2-maps-visualization/
