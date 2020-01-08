@@ -1,0 +1,202 @@
+---
+title: "2016 Presidential Election Debrief"
+output: pdf_document
+---
+
+Package
+
+```{r,inclue=FALSE}
+library(XML)
+library(xml2)
+library(tidyr)
+library(data.table)
+library(readxl)
+library(readxl)
+```
+
+#### 2016 Presidential Election Debrief Project
+
+### STEP 1. DATA WRANGLING
+
+## 1. 2016 Presidential Election results reported at the country level.
+reference: 
+1)http://www.stat.berkeley.edu/users/nolan/data/voteProject/2016_US_County_Le
+vel_Presidential_Results.csv
+2)https://github.com/tonmcg/County_Level_Election_Results_1216/blob/master/2016_US_County_Level_Presidential_Results.csv
+
+```{r, include=FALSE}
+
+election.2016 = read.csv(file = "http://www.stat.berkeley.edu/users/nolan/data/voteProject/2016_US_County_Level_Presidential_Results.csv", header = TRUE) # read 2016 presidential election file
+
+```
+
+#REBUILDING ELECTION 2016
+  In Election 2016, the data of Alaska is inconsistent and 'X' column is needless, thus dismiss the unnecessary rows and column.
+  Since in Election 2004 and 2008 do not have any information about other parties except Democratic and Republican, the votes need to be switched to total_votes, which is total of all parties with other parites, to total of only two parties, Democratic and Republican. Then, weit also needs to be changed to percentage, differentiation, and differentiation of percentage of votes for Democratic and Republican.
+  Also, there are some counties which have 'Parish' and 'city' instead of 'County' in their names, so the modification is requred to 'County'.
+
+```{r, include=FALSE}
+election.2016 = election.2016[election.2016$state_abbr != "AK",] #The data of Alaska is inconsistent, so I dismiss it.
+
+election.2016 = election.2016[, names(election.2016) != 'X'] # 'X' column is needless, so I dismiss it
+
+election.2016$total_votes = election.2016$votes_dem+election.2016$votes_gop #In election 2004 and 2008 do not have any information about other parties, we decide to change total_votes, which is total of all parties with other parties, to total of only Democratic and Republican
+
+election.2016$per_dem = election.2016$votes_dem/election.2016$total_votes #percentage of Democratic
+
+election.2016$per_gop = election.2016$votes_gop/election.2016$total_votes #percentage of Republican
+
+election.2016$diff = abs(election.2016$votes_dem - election.2016$votes_gop) #differentiation of Democratic and Republican
+
+election.2016$per_point_diff = abs(election.2016$per_dem -
+                                     election.2016$per_gop) 
+#differentiation of percentage of Democratic and Republican
+
+election.2016 = as.data.frame(sapply(election.2016,gsub,pattern="Parish",replacement="County")) #there are some counties which have Parish instead of County in their names, so change them to County
+
+election.2016 = as.data.frame(sapply(election.2016,gsub,pattern="city",replacement="County")) #there are some counties which have city instead of County in their names, so change them to County
+
+election.2016 = data.frame(lapply(election.2016, as.character), stringsAsFactors=FALSE) #change factors to character strings
+
+```
+
+##2. 2012 Presidential Election results reported at the country level.
+reference: 
+1)http://www.politico.com/2012-election/map/#/President/2012/ 2)http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2012/xxx.xml
+3)http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2012/stateNames.txt 
+
+#READING ELECTION 2012 FILE AND REBUILDING STATES NAME FILE 
+
+```{r, include=FALSE}
+states = read.table("http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2012/stateNames.txt", sep = "\t") #read states name file
+
+states = sub(" +", "", states$V1) #remove white space
+
+states = states[states != "states" & states != "alaska"] #remove Alaska since it is inconsistent data
+
+states_info = paste("http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2012/",states,".xml", sep = "") #make list of URLs to store all URLs of states in xmlparse
+
+states_doc = lapply(states_info, read_xml) #parse XML file of states
+
+```
+
+#BUILDING ELECTION 2012
+
+#GETTING NUMBER OF VOTES FOR EACH PARTY
+
+```{r,include=FALSE}
+votes_dem1 = list()
+votes_dem = list()
+
+for(i in 1:50){
+  votes_dem1[[i]] = xml_find_all(xml_root(states_doc[[i]]), '//tr[@class= "party-democrat race-winner" or @class = "party-democrat"]/td[@class = "results-popular"]')
+  votes_dem[[i]] = abs(tidyr::extract_numeric(as.character(votes_dem1[[i]])))
+} #make a list of number of votes for Democratic for each state
+
+votes_dem = unlist(votes_dem)
+
+votes_gop1 = list()
+votes_gop = list()
+
+for(i in 1:50){
+  votes_gop1[[i]] = xml_find_all(xml_root(states_doc[[i]]), '//tr[@class= "party-republican race-winner" or @class = "party-republican"]/td[@class = "results-popular"]')
+  votes_gop[[i]] = abs(tidyr::extract_numeric(as.character(votes_gop1[[i]])))
+}
+
+votes_gop = unlist(votes_gop)
+votes_data = data.frame(votes_dem, votes_gop, 
+                  stringsAsFactors = FALSE)       #make small dataframe for votes_dem and votes_gop.
+
+total_votes = votes_data$votes_dem+votes_data$votes_gop #get total votes of Democratic and Republican parties
+
+votes_data = data.frame(votes_data,total_votes, stringsAsFactors = FALSE) #merge votes_dem, votes_gop, and total_votes
+
+
+```
+
+#PERCENTAGE OF DEMOCRATIC AND REPUBLICAN // DIFFERENTIATION 
+
+```{r, include=FALSE}
+per_dem = votes_data$votes_dem/votes_data$total_votes #percentage of Democratic
+per_gop = votes_data$votes_gop/votes_data$total_votes #percentage of Republican
+diff = abs(votes_data$votes_dem - votes_data$votes_gop) #differentiation of Democratic and Republican
+per_point_diff = abs(per_dem - per_gop) #differentiation of percentage of Democratic and Republican
+```
+
+#ABBREVIATION OF STATES FOR ELECTION 2012
+
+```{r, include=FALSE}
+abbreviation_state = c("AL", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI","ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN","MS", "MO",  "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH","OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA","WV", "WI", "WY") #make abbreviation of states from election 2016 to apply them to election 2012
+state_abbr1 = list()
+for(i in 1:50){
+  state_abbr1[[i]] = rep(abbreviation_state[i],length(votes_dem1[[i]]))
+}
+state_abbr = unlist(state_abbr1) #make it unlist to merge to dataframe
+
+```
+
+#COUNTY NAME
+
+```{r, include=FALSE}
+county_name1 = list()
+county_name = list()
+for(i in 1:50){
+  county_name1[[i]] = xml_find_all(xml_root(states_doc[[i]]), '//th[@class = "results-county"]')
+  county_name1[[i]] = county_name1[[i]][-1] #remove first row whose name is "County"
+  county_name[[i]] = as.character(stringr::str_sub(county_name1[[i]], 40, -64))
+}
+
+county_name = unlist(county_name)
+
+county_name[county_name != "District of Columbia"] = paste0(county_name[county_name != "District of Columbia"],' County') #insert ' County' to end of all strings to make county_name same as the election 2016
+```
+
+#COUNTY ID
+
+```{r, include=FALSE}
+combined_fips1 = list()
+combined_fips = list()
+for(i in 1:50){
+  combined_fips1[[i]] = xml_find_all(xml_root(states_doc[[i]]), '//tbody')
+  combined_fips[[i]] = substring(combined_fips1[[i]], regexpr('county', combined_fips1[[i]]) + 6, regexpr('">\n', combined_fips1[[i]])-1)
+  combined_fips[[i]] = str_extract(combined_fips[[i]], "[:digit:]+")
+}  #make a list of attributes of id's of tbody to get combined_fips
+
+combined_fips = unlist(combined_fips)
+#remove needless word and make them unlist and numeric to merge into dataframe.
+```
+
+#MERGING by Combined_fips
+
+```{r, include=FALSE}
+
+election.2012 = cbind(votes_data, per_dem, per_gop, diff, per_point_diff, state_abbr, county_name, combined_fips) #merge all data of 2012 election
+election.2012 = as.data.frame(sapply(election.2012,gsub,pattern="Saint",replacement="St.")) #there are some county which have Saint instead of St. in their names, so change them to St.
+election.2012 = as.data.frame(sapply(election.2012,gsub,pattern="County County",replacement="County")) #there are some county which have "County County" instead of "County" in their names, so change them to "County"
+election.2012$combined_fips = as.character(election.2012$combined_fips)
+
+
+drops = c("state_abbr","county_name")
+election.2012 = election.2012[, !(names(election.2012) %in% drops)]
+
+election_2012_2016 = merge(election.2016, election.2012, by = c("combined_fips")) #merge election 2016 and 2012
+
+setnames(election_2012_2016, old = c("votes_dem.x", "votes_gop.x", "total_votes.x", "per_dem.x", "per_gop.x", "diff.x", "per_point_diff.x", "votes_dem.y", "votes_gop.y", "total_votes.y", "per_dem.y", "per_gop.y", "diff.y", "per_point_diff.y"), 
+         new = c("Clinton_2016", "Trump_2016", "Total_2016", "DemProp_2016", "RepProp_2016", "DiffVotes_2016", "DiffPer_2016", "Obama_2012", "Romney_2012", "Total_2012", "DemProp_2012", "RepProp_2012", "DiffVotes_2012", "DiffPer_2012"))
+
+```
+
+##3. 2008 Presidential Election results reported at the country level.
+Author: Roozbeh Faghihi Moghdam / 25765752
+reference:
+1)http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2008.xlsx
+
+```{r, include=FALSE}
+
+result_2008 = tempfile(fileext = ".xlsx")
+download.file(url = "http://www.stat.berkeley.edu/users/nolan/data/voteProject/countyVotes2008.xlsx", destfile = result_2008, mode="wb")
+
+#Reading Data
+result_2008 <- sapply(excel_sheets(result_2008), read_excel, path = result_2008)
+
+```
